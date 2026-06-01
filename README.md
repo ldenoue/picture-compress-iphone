@@ -2,7 +2,7 @@
 
 A simple SwiftUI iOS app that scans the user's Photos library, estimates how much storage could be saved by resizing images to a configurable maximum side length, and can create compressed replacements.
 
-![Photo Squeeze showing compression settings and estimated savings](Screenshots/photo-squeeze-screenshot.png)
+![Photo Squeeze showing compression settings and estimated savings](PictureCompress/Screenshots/photo-squeeze-screenshot.png)
 
 The app lets you choose a maximum image side length and JPEG quality, estimate likely savings, then prepare compressed replacements for the originals.
 
