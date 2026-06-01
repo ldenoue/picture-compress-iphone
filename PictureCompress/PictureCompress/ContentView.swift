@@ -96,7 +96,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("Photo Shrinker")
+            .navigationTitle("Photo Squeeze")
             .task {
                 await library.refreshAuthorization()
             }

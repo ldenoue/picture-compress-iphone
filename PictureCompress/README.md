@@ -1,4 +1,4 @@
-# Photo Shrinker
+# Photo Squeeze
 
 A simple SwiftUI iOS app that scans the user's Photos library, estimates how much storage could be saved by resizing images to a configurable maximum side length, and can create compressed replacements.
 
