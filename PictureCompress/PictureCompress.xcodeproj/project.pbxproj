@@ -15,7 +15,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		100000000000000000000010 /* PictureCompress.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PictureCompress.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		100000000000000000000010 /* Photo Squeeze.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Photo Squeeze.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		100000000000000000000011 /* PictureCompressApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PictureCompressApp.swift; sourceTree = "<group>"; };
 		100000000000000000000012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		100000000000000000000013 /* PhotoLibraryCompressor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryCompressor.swift; sourceTree = "<group>"; };
@@ -59,7 +59,7 @@
 		100000000000000000000032 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				100000000000000000000010 /* PictureCompress.app */,
+				100000000000000000000010 /* Photo Squeeze.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -81,7 +81,7 @@
 			);
 			name = PictureCompress;
 			productName = PictureCompress;
-			productReference = 100000000000000000000010 /* PictureCompress.app */;
+			productReference = 100000000000000000000010 /* Photo Squeeze.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -92,7 +92,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1600;
-				LastUpgradeCheck = 1600;
+				LastUpgradeCheck = 2610;
 				TargetAttributes = {
 					100000000000000000000040 = {
 						CreatedOnToolsVersion = 16.0;
@@ -199,6 +199,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -253,6 +254,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -265,7 +267,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 388X9C8CWR;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = PictureCompress/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
@@ -293,7 +295,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 388X9C8CWR;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = PictureCompress/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
@@ -317,20 +319,20 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		100000000000000000000061 /* Build configuration list for PBXProject "PictureCompress" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				100000000000000000000070 /* Debug */,
-				100000000000000000000071 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		100000000000000000000041 /* Build configuration list for PBXNativeTarget "PictureCompress" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				100000000000000000000080 /* Debug */,
 				100000000000000000000081 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		100000000000000000000061 /* Build configuration list for PBXProject "PictureCompress" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				100000000000000000000070 /* Debug */,
+				100000000000000000000071 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
