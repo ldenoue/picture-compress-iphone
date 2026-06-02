@@ -4,6 +4,43 @@ import UniformTypeIdentifiers
 
 enum ImageCompressor {
     static func compressedJPEGData(from sourceData: Data, maxPixelSize: Int, jpegQuality: Double) throws -> Data {
+        try autoreleasepool {
+            let image = try resizedImage(from: sourceData, maxPixelSize: maxPixelSize)
+
+            let outputData = NSMutableData()
+            guard let destination = CGImageDestinationCreateWithData(
+                outputData,
+                UTType.jpeg.identifier as CFString,
+                1,
+                nil
+            ) else {
+                throw PhotoCompressionError.cannotCreateDestination
+            }
+
+            try addJPEGImage(image, from: sourceData, to: destination, jpegQuality: jpegQuality)
+            return outputData as Data
+        }
+    }
+
+    static func writeCompressedJPEG(from sourceData: Data, to url: URL, maxPixelSize: Int, jpegQuality: Double) throws -> Int {
+        try autoreleasepool {
+            let image = try resizedImage(from: sourceData, maxPixelSize: maxPixelSize)
+            guard let destination = CGImageDestinationCreateWithURL(
+                url as CFURL,
+                UTType.jpeg.identifier as CFString,
+                1,
+                nil
+            ) else {
+                throw PhotoCompressionError.cannotCreateDestination
+            }
+
+            try addJPEGImage(image, from: sourceData, to: destination, jpegQuality: jpegQuality)
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            return attributes[.size] as? Int ?? 0
+        }
+    }
+
+    private static func resizedImage(from sourceData: Data, maxPixelSize: Int) throws -> CGImage {
         guard let source = CGImageSourceCreateWithData(sourceData as CFData, nil) else {
             throw PhotoCompressionError.cannotCreateImageSource
         }
@@ -18,14 +55,12 @@ enum ImageCompressor {
             throw PhotoCompressionError.cannotCreateThumbnail
         }
 
-        let outputData = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(
-            outputData,
-            UTType.jpeg.identifier as CFString,
-            1,
-            nil
-        ) else {
-            throw PhotoCompressionError.cannotCreateDestination
+        return image
+    }
+
+    private static func addJPEGImage(_ image: CGImage, from sourceData: Data, to destination: CGImageDestination, jpegQuality: Double) throws {
+        guard let source = CGImageSourceCreateWithData(sourceData as CFData, nil) else {
+            throw PhotoCompressionError.cannotCreateImageSource
         }
 
         var metadata = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
@@ -38,7 +73,5 @@ enum ImageCompressor {
         guard CGImageDestinationFinalize(destination) else {
             throw PhotoCompressionError.cannotFinalizeImage
         }
-
-        return outputData as Data
     }
 }

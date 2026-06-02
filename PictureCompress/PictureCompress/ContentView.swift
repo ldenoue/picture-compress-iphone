@@ -51,9 +51,9 @@ struct ContentView: View {
                     } label: {
                         Label("Compress and Replace Originals", systemImage: "arrow.triangle.2.circlepath.camera")
                     }
-                    .disabled(!library.canAccessPhotos || library.estimates.isEmpty || library.isBusy)
+                    .disabled(!library.canAccessPhotos || library.isBusy)
                 } footer: {
-                    Text("iOS does not allow apps to rewrite a Photos original in place. This prepares bounded batches of compressed replacements, then asks Photos to save each batch and delete its originals.")
+                    Text("You can estimate first, or compress directly in one pass. iOS does not allow apps to rewrite a Photos original in place, so this prepares bounded batches of compressed replacements, then asks Photos to save each batch and delete its originals.")
                 }
 
                 if library.isBusy {
