@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var maxSidePixels = 2048
     @State private var quality = 0.78
     @State private var exportFormat: ExportFormat = .heic
+    @State private var parallelCompressionCount = 4
     @State private var isShowingReplaceConfirmation = false
 
     var body: some View {
@@ -62,6 +63,14 @@ struct ContentView: View {
                         }
                         Slider(value: $quality, in: 0.35...0.95)
                     }
+
+                    Picker("Parallel", selection: $parallelCompressionCount) {
+                        Text("1 image").tag(1)
+                        Text("2 images").tag(2)
+                        Text("4 images").tag(4)
+                        Text("6 images").tag(6)
+                    }
+                    .pickerStyle(.menu)
                 }
 
                 Section("Estimate") {
@@ -96,7 +105,12 @@ struct ContentView: View {
             .alert(replaceConfirmationTitle, isPresented: $isShowingReplaceConfirmation) {
                 Button(replaceConfirmationButtonTitle, role: .destructive) {
                     Task {
-                        await library.compressAndReplace(maxPixelSize: maxSidePixels, quality: quality, format: exportFormat)
+                        await library.compressAndReplace(
+                            maxPixelSize: maxSidePixels,
+                            quality: quality,
+                            format: exportFormat,
+                            parallelism: parallelCompressionCount
+                        )
                     }
                 }
                 Button("Cancel", role: .cancel) {}
@@ -151,7 +165,12 @@ struct ContentView: View {
             HStack(spacing: 12) {
                 Button {
                     Task {
-                        await library.scan(maxPixelSize: maxSidePixels, quality: quality, format: exportFormat)
+                        await library.scan(
+                            maxPixelSize: maxSidePixels,
+                            quality: quality,
+                            format: exportFormat,
+                            parallelism: parallelCompressionCount
+                        )
                     }
                 } label: {
                     Text("ESTIMATE")

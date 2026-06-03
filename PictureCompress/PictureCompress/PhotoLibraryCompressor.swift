@@ -39,6 +39,176 @@ private struct PreparedReplacement {
     let albums: [PHAssetCollection]
 }
 
+private enum EstimateOutcome {
+    case savings(PhotoEstimate)
+    case noSavings
+    case failed(String)
+}
+
+private enum ReplacementOutcome {
+    case prepared(PreparedReplacement)
+    case skipped
+    case failed(String)
+}
+
+private enum PhotoCompressionWorker {
+    static func estimate(asset: PHAsset, maxPixelSize: Int, quality: Double, format: ExportFormat) async -> EstimateOutcome {
+        guard !shouldSkip(asset: asset) else {
+            return .noSavings
+        }
+
+        do {
+            let source = try await requestImageData(for: asset)
+            guard !shouldSkip(uniformTypeIdentifier: source.uniformTypeIdentifier) else {
+                return .noSavings
+            }
+
+            let compressedData = try ImageCompressor.compressedData(
+                from: source.data,
+                maxPixelSize: maxPixelSize,
+                quality: quality,
+                format: format
+            )
+
+            guard compressedData.count < source.data.count else {
+                return .noSavings
+            }
+
+            return .savings(
+                PhotoEstimate(
+                    id: asset.localIdentifier,
+                    asset: asset,
+                    originalBytes: source.data.count,
+                    compressedBytes: compressedData.count,
+                    pixelWidth: asset.pixelWidth,
+                    pixelHeight: asset.pixelHeight,
+                    creationDate: asset.creationDate
+                )
+            )
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    static func prepareReplacement(
+        for asset: PHAsset,
+        temporaryDirectory: URL,
+        maxPixelSize: Int,
+        quality: Double,
+        format: ExportFormat
+    ) async -> ReplacementOutcome {
+        guard !shouldSkip(asset: asset) else {
+            return .skipped
+        }
+
+        do {
+            let source = try await requestImageData(for: asset)
+            guard !shouldSkip(uniformTypeIdentifier: source.uniformTypeIdentifier) else {
+                return .skipped
+            }
+
+            try FileManager.default.createDirectory(
+                at: temporaryDirectory,
+                withIntermediateDirectories: true
+            )
+
+            let temporaryURL = temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension(format.fileExtension)
+
+            let compressedBytes: Int
+            do {
+                compressedBytes = try ImageCompressor.writeCompressedImage(
+                    from: source.data,
+                    to: temporaryURL,
+                    maxPixelSize: maxPixelSize,
+                    quality: quality,
+                    format: format
+                )
+            } catch {
+                try? FileManager.default.removeItem(at: temporaryURL)
+                throw error
+            }
+
+            guard compressedBytes < source.data.count else {
+                try? FileManager.default.removeItem(at: temporaryURL)
+                return .skipped
+            }
+
+            return .prepared(
+                PreparedReplacement(
+                    asset: asset,
+                    temporaryURL: temporaryURL,
+                    temporaryBytes: compressedBytes,
+                    albums: userAlbums(containing: asset)
+                )
+            )
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    private static func userAlbums(containing asset: PHAsset) -> [PHAssetCollection] {
+        let collections = PHAssetCollection.fetchAssetCollectionsContaining(asset, with: .album, options: nil)
+        var albums: [PHAssetCollection] = []
+        collections.enumerateObjects { collection, _, _ in
+            if collection.assetCollectionType == .album {
+                albums.append(collection)
+            }
+        }
+        return albums
+    }
+
+    private static func shouldSkip(asset: PHAsset) -> Bool {
+        asset.mediaSubtypes.contains(.photoLive)
+    }
+
+    private static func shouldSkip(uniformTypeIdentifier: String?) -> Bool {
+        guard
+            let uniformTypeIdentifier,
+            let type = UTType(uniformTypeIdentifier)
+        else {
+            return false
+        }
+
+        return type.conforms(to: .rawImage) || type.conforms(to: .gif)
+    }
+
+    private static func requestImageData(for asset: PHAsset) async throws -> RequestedPhotoData {
+        try await withCheckedThrowingContinuation { continuation in
+            let options = PHImageRequestOptions()
+            options.isNetworkAccessAllowed = true
+            options.deliveryMode = .highQualityFormat
+            options.version = .current
+
+            var didResume = false
+            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, uniformTypeIdentifier, _, info in
+                guard !didResume else { return }
+                if let error = info?[PHImageErrorKey] as? Error {
+                    didResume = true
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                if info?[PHImageCancelledKey] as? Bool == true {
+                    didResume = true
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+
+                guard let data else {
+                    didResume = true
+                    continuation.resume(throwing: PhotoCompressionError.missingImageData)
+                    return
+                }
+
+                didResume = true
+                continuation.resume(returning: RequestedPhotoData(data: data, uniformTypeIdentifier: uniformTypeIdentifier))
+            }
+        }
+    }
+}
+
 @MainActor
 final class PhotoLibraryCompressor: ObservableObject {
     @Published private(set) var authorizationStatus: PHAuthorizationStatus = .notDetermined
@@ -52,7 +222,6 @@ final class PhotoLibraryCompressor: ObservableObject {
     @Published private(set) var photosWithNoSavings = 0
     @Published private(set) var stopRequested = false
 
-    private let imageManager = PHImageManager.default()
     private let temporaryReplacementFolderName = "PhotoSqueezeReplacements"
     private let fallbackBatchTemporaryBytes = 200 * 1024 * 1024
     private let maxBatchTemporaryBytes = 4 * 1024 * 1024 * 1024
@@ -156,7 +325,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         cleanupAllTemporaryReplacementFiles()
     }
 
-    func scan(maxPixelSize: Int, quality: Double, format: ExportFormat) async {
+    func scan(maxPixelSize: Int, quality: Double, format: ExportFormat, parallelism: Int) async {
         guard canAccessPhotos else {
             messages.insert("Grant Photos access first.", at: 0)
             return
@@ -178,70 +347,39 @@ final class PhotoLibraryCompressor: ObservableObject {
             statusText = wasStopped ? "Estimate stopped" : "Scan complete"
         }
 
-        let assets = fetchImageAssets()
+        let assets = fetchImageAssetArray()
         guard assets.count > 0 else {
             messages.append("No image assets were available.")
             return
         }
 
         var newEstimates: [PhotoEstimate] = []
-        for index in 0..<assets.count {
+        var processed = 0
+        for chunk in assets.chunked(into: normalizedParallelism(parallelism)) {
             if stopRequested {
                 statusText = "Estimate stopped"
                 break
             }
 
-            let asset = assets.object(at: index)
-            if shouldUpdateProgress(index: index, total: assets.count) {
-                statusText = "Estimating \(index + 1) of \(assets.count)"
-                progress = Double(index) / Double(assets.count)
-            }
-
-            do {
+            let outcomes = await estimate(chunk, maxPixelSize: maxPixelSize, quality: quality, format: format)
+            for outcome in outcomes {
                 photosChecked += 1
+                processed += 1
 
-                guard !shouldSkip(asset: asset) else {
+                switch outcome {
+                case .savings(let estimate):
+                    newEstimates.append(estimate)
+                case .noSavings:
                     photosWithNoSavings += 1
-                    continue
-                }
-
-                let source = try await requestImageData(for: asset)
-                guard !shouldSkip(uniformTypeIdentifier: source.uniformTypeIdentifier) else {
+                case .failed(let message):
                     photosWithNoSavings += 1
-                    continue
+                    messages.append("Skipped a photo: \(message)")
                 }
-
-                let compressedData = try await Task.detached(priority: .utility) {
-                    try ImageCompressor.compressedData(
-                        from: source.data,
-                        maxPixelSize: maxPixelSize,
-                        quality: quality,
-                        format: format
-                    )
-                }.value
-
-                guard compressedData.count < source.data.count else {
-                    photosWithNoSavings += 1
-                    continue
-                }
-
-                newEstimates.append(
-                    PhotoEstimate(
-                        id: asset.localIdentifier,
-                        asset: asset,
-                        originalBytes: source.data.count,
-                        compressedBytes: compressedData.count,
-                        pixelWidth: asset.pixelWidth,
-                        pixelHeight: asset.pixelHeight,
-                        creationDate: asset.creationDate
-                    )
-                )
-            } catch {
-                photosWithNoSavings += 1
-                messages.append("Skipped a photo: \(error.localizedDescription)")
             }
 
-            if index % 10 == 0 {
+            if shouldUpdateProgress(index: processed, total: assets.count) {
+                statusText = "Estimating \(min(processed, assets.count)) of \(assets.count)"
+                progress = Double(processed) / Double(assets.count)
                 estimates = newEstimates.sorted { $0.savedBytes > $1.savedBytes }
             }
         }
@@ -254,7 +392,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         }
     }
 
-    func compressAndReplace(maxPixelSize: Int, quality: Double, format: ExportFormat) async {
+    func compressAndReplace(maxPixelSize: Int, quality: Double, format: ExportFormat, parallelism: Int) async {
         guard canAccessPhotos else {
             messages.insert("Grant Photos access first.", at: 0)
             return
@@ -288,27 +426,45 @@ final class PhotoLibraryCompressor: ObservableObject {
         }
 
         let targetDescription = estimates.isEmpty ? "photo" : "estimated photo"
-        for (index, asset) in targets.enumerated() {
+        var processed = 0
+        for chunk in targets.chunked(into: normalizedParallelism(parallelism)) {
             if stopRequested {
                 statusText = "Compression stopped"
                 break
             }
 
-            if shouldUpdateProgress(index: index, total: targets.count) {
-                statusText = "Preparing \(index + 1) of \(targets.count) \(targetDescription)s"
-                progress = Double(index) / Double(max(1, targets.count))
-            }
+            let outcomes = await prepareReplacements(
+                chunk,
+                maxPixelSize: maxPixelSize,
+                quality: quality,
+                format: format
+            )
 
-            do {
-                let replacement = try await prepareReplacement(
-                    for: asset,
-                    maxPixelSize: maxPixelSize,
-                    quality: quality,
-                    format: format
-                )
-                prepared.append(replacement)
-                preparedBytes += replacement.temporaryBytes
+            for outcome in outcomes {
+                processed += 1
 
+                switch outcome {
+                case .prepared(let replacement):
+                    prepared.append(replacement)
+                    preparedBytes += replacement.temporaryBytes
+                case .skipped:
+                    skipped += 1
+                case .failed(let message):
+                    failed += 1
+                    messages.append("Could not prepare a photo: \(message)")
+                }
+
+                if shouldUpdateProgress(index: processed, total: targets.count) {
+                    statusText = "Preparing \(min(processed, targets.count)) of \(targets.count) \(targetDescription)s"
+                    progress = Double(processed) / Double(max(1, targets.count))
+                }
+
+                guard !stopRequested else {
+                    statusText = "Compression stopped"
+                    break
+                }
+
+                guard !prepared.isEmpty else { continue }
                 if shouldCommitBatch(prepared, temporaryBytes: preparedBytes, byteLimit: batchTemporaryByteLimit) {
                     guard !stopRequested else {
                         statusText = "Compression stopped"
@@ -318,13 +474,11 @@ final class PhotoLibraryCompressor: ObservableObject {
                     preparedBytes = 0
                     batchTemporaryByteLimit = dynamicBatchTemporaryByteLimit()
                 }
-            } catch PhotoCompressionError.noStorageSavings {
-                skipped += 1
-            } catch PhotoCompressionError.unsupportedAssetKind {
-                skipped += 1
-            } catch {
-                failed += 1
-                messages.append("Could not prepare a photo: \(error.localizedDescription)")
+            }
+
+            if stopRequested {
+                statusText = "Compression stopped"
+                break
             }
         }
 
@@ -360,67 +514,72 @@ final class PhotoLibraryCompressor: ObservableObject {
         return PHAsset.fetchAssets(with: options)
     }
 
+    private func fetchImageAssetArray() -> [PHAsset] {
+        let assets = fetchImageAssets()
+        var assetArray: [PHAsset] = []
+        assetArray.reserveCapacity(assets.count)
+        assets.enumerateObjects { asset, _, _ in
+            assetArray.append(asset)
+        }
+        return assetArray
+    }
+
     private func compressionTargets() -> [PHAsset] {
         guard estimates.isEmpty else {
             return estimates.map(\.asset)
         }
 
-        let assets = fetchImageAssets()
-        var targets: [PHAsset] = []
-        targets.reserveCapacity(assets.count)
-        assets.enumerateObjects { asset, _, _ in
-            targets.append(asset)
-        }
-        return targets
+        return fetchImageAssetArray()
     }
 
-    private func prepareReplacement(for asset: PHAsset, maxPixelSize: Int, quality: Double, format: ExportFormat) async throws -> PreparedReplacement {
-        guard !shouldSkip(asset: asset) else {
-            throw PhotoCompressionError.unsupportedAssetKind
+    private func normalizedParallelism(_ parallelism: Int) -> Int {
+        min(8, max(1, parallelism))
+    }
+
+    private func estimate(_ assets: [PHAsset], maxPixelSize: Int, quality: Double, format: ExportFormat) async -> [EstimateOutcome] {
+        await withTaskGroup(of: EstimateOutcome.self) { group in
+            for asset in assets {
+                group.addTask {
+                    await PhotoCompressionWorker.estimate(
+                        asset: asset,
+                        maxPixelSize: maxPixelSize,
+                        quality: quality,
+                        format: format
+                    )
+                }
+            }
+
+            var outcomes: [EstimateOutcome] = []
+            outcomes.reserveCapacity(assets.count)
+            for await outcome in group {
+                outcomes.append(outcome)
+            }
+            return outcomes
         }
+    }
 
-        let source = try await requestImageData(for: asset)
-        guard !shouldSkip(uniformTypeIdentifier: source.uniformTypeIdentifier) else {
-            throw PhotoCompressionError.unsupportedAssetKind
+    private func prepareReplacements(_ assets: [PHAsset], maxPixelSize: Int, quality: Double, format: ExportFormat) async -> [ReplacementOutcome] {
+        let temporaryDirectory = temporaryReplacementDirectory
+        return await withTaskGroup(of: ReplacementOutcome.self) { group in
+            for asset in assets {
+                group.addTask {
+                    await PhotoCompressionWorker.prepareReplacement(
+                        for: asset,
+                        temporaryDirectory: temporaryDirectory,
+                        maxPixelSize: maxPixelSize,
+                        quality: quality,
+                        format: format
+                    )
+                }
+            }
+
+            var outcomes: [ReplacementOutcome] = []
+            outcomes.reserveCapacity(assets.count)
+            for await outcome in group {
+                outcomes.append(outcome)
+            }
+            return outcomes
         }
-
-        let temporaryURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(temporaryReplacementFolderName, isDirectory: true)
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension(format.fileExtension)
-
-        try FileManager.default.createDirectory(
-            at: temporaryReplacementDirectory,
-            withIntermediateDirectories: true
-        )
-
-        let compressedBytes: Int
-        do {
-            compressedBytes = try await Task.detached(priority: .utility) {
-                try ImageCompressor.writeCompressedImage(
-                    from: source.data,
-                    to: temporaryURL,
-                    maxPixelSize: maxPixelSize,
-                    quality: quality,
-                    format: format
-                )
-            }.value
-        } catch {
-            try? FileManager.default.removeItem(at: temporaryURL)
-            throw error
-        }
-
-        guard compressedBytes < source.data.count else {
-            try? FileManager.default.removeItem(at: temporaryURL)
-            throw PhotoCompressionError.noStorageSavings
-        }
-
-        return PreparedReplacement(
-            asset: asset,
-            temporaryURL: temporaryURL,
-            temporaryBytes: compressedBytes,
-            albums: userAlbums(containing: asset)
-        )
     }
 
     private func shouldCommitBatch(_ replacements: [PreparedReplacement], temporaryBytes: Int, byteLimit: Int) -> Bool {
@@ -510,68 +669,8 @@ final class PhotoLibraryCompressor: ObservableObject {
         }
     }
 
-    private func userAlbums(containing asset: PHAsset) -> [PHAssetCollection] {
-        let collections = PHAssetCollection.fetchAssetCollectionsContaining(asset, with: .album, options: nil)
-        var albums: [PHAssetCollection] = []
-        collections.enumerateObjects { collection, _, _ in
-            if collection.assetCollectionType == .album {
-                albums.append(collection)
-            }
-        }
-        return albums
-    }
-
-    private func shouldSkip(asset: PHAsset) -> Bool {
-        asset.mediaSubtypes.contains(.photoLive)
-    }
-
-    private func shouldSkip(uniformTypeIdentifier: String?) -> Bool {
-        guard
-            let uniformTypeIdentifier,
-            let type = UTType(uniformTypeIdentifier)
-        else {
-            return false
-        }
-
-        return type.conforms(to: .rawImage) || type.conforms(to: .gif)
-    }
-
     private func shouldUpdateProgress(index: Int, total: Int) -> Bool {
         index == 0 || index == total - 1 || index % 5 == 0
-    }
-
-    private func requestImageData(for asset: PHAsset) async throws -> RequestedPhotoData {
-        try await withCheckedThrowingContinuation { continuation in
-            let options = PHImageRequestOptions()
-            options.isNetworkAccessAllowed = true
-            options.deliveryMode = .highQualityFormat
-            options.version = .current
-
-            var didResume = false
-            imageManager.requestImageDataAndOrientation(for: asset, options: options) { data, uniformTypeIdentifier, _, info in
-                guard !didResume else { return }
-                if let error = info?[PHImageErrorKey] as? Error {
-                    didResume = true
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                if info?[PHImageCancelledKey] as? Bool == true {
-                    didResume = true
-                    continuation.resume(throwing: CancellationError())
-                    return
-                }
-
-                guard let data else {
-                    didResume = true
-                    continuation.resume(throwing: PhotoCompressionError.missingImageData)
-                    return
-                }
-
-                didResume = true
-                continuation.resume(returning: RequestedPhotoData(data: data, uniformTypeIdentifier: uniformTypeIdentifier))
-            }
-        }
     }
 
     private func performPhotoChanges(_ changes: @escaping () -> Void) async throws {
@@ -617,6 +716,15 @@ enum PhotoCompressionError: LocalizedError {
             return "This asset type is skipped to avoid losing Live Photo, RAW, or animated image data."
         case .noStorageSavings:
             return "The compressed photo would not save storage."
+        }
+    }
+}
+
+private extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        guard size > 0 else { return [self] }
+        return stride(from: 0, to: count, by: size).map { startIndex in
+            Array(self[startIndex..<Swift.min(startIndex + size, count)])
         }
     }
 }
