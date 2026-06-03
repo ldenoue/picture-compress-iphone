@@ -221,6 +221,7 @@ final class PhotoLibraryCompressor: ObservableObject {
     @Published private(set) var photosChecked = 0
     @Published private(set) var photosWithNoSavings = 0
     @Published private(set) var stopRequested = false
+    @Published private(set) var throughputText = ""
 
     private let temporaryReplacementFolderName = "PhotoSqueezeReplacements"
     private let fallbackBatchTemporaryBytes = 200 * 1024 * 1024
@@ -312,6 +313,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         photosWithNoSavings = 0
         progress = 0
         statusText = "Idle"
+        throughputText = ""
     }
 
     func stopCurrentWork() {
@@ -335,6 +337,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         stopRequested = false
         progress = 0
         statusText = "Fetching photos..."
+        throughputText = ""
         messages.removeAll()
         estimates.removeAll()
         photosChecked = 0
@@ -355,6 +358,7 @@ final class PhotoLibraryCompressor: ObservableObject {
 
         var newEstimates: [PhotoEstimate] = []
         var processed = 0
+        let startedAt = Date()
         for chunk in assets.chunked(into: normalizedParallelism(parallelism)) {
             if stopRequested {
                 statusText = "Estimate stopped"
@@ -379,6 +383,7 @@ final class PhotoLibraryCompressor: ObservableObject {
 
             statusText = "Estimating \(min(processed, assets.count)) of \(assets.count)"
             progress = Double(processed) / Double(assets.count)
+            throughputText = throughputSummary(processed: processed, startedAt: startedAt)
             estimates = newEstimates.sorted { $0.savedBytes > $1.savedBytes }
         }
 
@@ -399,6 +404,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         stopRequested = false
         cleanupAllTemporaryReplacementFiles()
         progress = 0
+        throughputText = ""
 
         var prepared: [PreparedReplacement] = []
         defer {
@@ -425,6 +431,7 @@ final class PhotoLibraryCompressor: ObservableObject {
 
         let targetDescription = estimates.isEmpty ? "photo" : "estimated photo"
         var processed = 0
+        let startedAt = Date()
         for chunk in targets.chunked(into: normalizedParallelism(parallelism)) {
             if stopRequested {
                 statusText = "Compression stopped"
@@ -454,6 +461,7 @@ final class PhotoLibraryCompressor: ObservableObject {
 
                 statusText = "Preparing \(min(processed, targets.count)) of \(targets.count) \(targetDescription)s"
                 progress = Double(processed) / Double(max(1, targets.count))
+                throughputText = throughputSummary(processed: processed, startedAt: startedAt)
 
                 guard !stopRequested else {
                     statusText = "Compression stopped"
@@ -667,6 +675,14 @@ final class PhotoLibraryCompressor: ObservableObject {
 
     private func shouldUpdateProgress(index: Int, total: Int) -> Bool {
         index == 0 || index == total - 1 || index % 5 == 0
+    }
+
+    private func throughputSummary(processed: Int, startedAt: Date) -> String {
+        let elapsed = max(0.001, Date().timeIntervalSince(startedAt))
+        let rate = Double(processed) / elapsed
+        let elapsedText = elapsed.formatted(.number.precision(.fractionLength(elapsed < 10 ? 1 : 0)))
+        let rateText = rate.formatted(.number.precision(.fractionLength(rate < 10 ? 1 : 0)))
+        return "\(elapsedText)s elapsed - \(rateText) photos/sec"
     }
 
     private func performPhotoChanges(_ changes: @escaping () -> Void) async throws {

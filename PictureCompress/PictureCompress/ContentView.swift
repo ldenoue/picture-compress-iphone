@@ -221,6 +221,14 @@ struct ContentView: View {
                         .tint(.red)
                         .disabled(library.stopRequested)
                     }
+
+                    if !library.throughputText.isEmpty {
+                        Text(library.throughputText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .monospacedDigit()
+                    }
                 }
                 .padding(.top, 2)
             }
