@@ -377,11 +377,9 @@ final class PhotoLibraryCompressor: ObservableObject {
                 }
             }
 
-            if shouldUpdateProgress(index: processed, total: assets.count) {
-                statusText = "Estimating \(min(processed, assets.count)) of \(assets.count)"
-                progress = Double(processed) / Double(assets.count)
-                estimates = newEstimates.sorted { $0.savedBytes > $1.savedBytes }
-            }
+            statusText = "Estimating \(min(processed, assets.count)) of \(assets.count)"
+            progress = Double(processed) / Double(assets.count)
+            estimates = newEstimates.sorted { $0.savedBytes > $1.savedBytes }
         }
 
         estimates = newEstimates.sorted { $0.savedBytes > $1.savedBytes }
@@ -454,10 +452,8 @@ final class PhotoLibraryCompressor: ObservableObject {
                     messages.append("Could not prepare a photo: \(message)")
                 }
 
-                if shouldUpdateProgress(index: processed, total: targets.count) {
-                    statusText = "Preparing \(min(processed, targets.count)) of \(targets.count) \(targetDescription)s"
-                    progress = Double(processed) / Double(max(1, targets.count))
-                }
+                statusText = "Preparing \(min(processed, targets.count)) of \(targets.count) \(targetDescription)s"
+                progress = Double(processed) / Double(max(1, targets.count))
 
                 guard !stopRequested else {
                     statusText = "Compression stopped"
