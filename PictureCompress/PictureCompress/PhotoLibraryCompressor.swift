@@ -94,6 +94,23 @@ final class PhotoLibraryCompressor: ObservableObject {
         return percent.formatted(.number.precision(.fractionLength(1))) + "%"
     }
 
+    var estimatedSavingsRatio: Double {
+        guard totalOriginalBytes > 0 else { return 0 }
+        return min(1, max(0, Double(estimatedSavingsBytes) / Double(totalOriginalBytes)))
+    }
+
+    var savingsGaugeCaption: String {
+        if isScanning {
+            return "potential storage found so far"
+        }
+
+        guard !estimates.isEmpty else {
+            return "run an estimate to fill the savings meter"
+        }
+
+        return "potential storage savings"
+    }
+
     func refreshAuthorization() async {
         authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     }
@@ -102,7 +119,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         authorizationStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
     }
 
-    func scan(maxPixelSize: Int, jpegQuality: Double) async {
+    func scan(maxPixelSize: Int, quality: Double, format: ExportFormat) async {
         guard canAccessPhotos else {
             messages.insert("Grant Photos access first.", at: 0)
             return
@@ -140,10 +157,11 @@ final class PhotoLibraryCompressor: ObservableObject {
                 guard !shouldSkip(uniformTypeIdentifier: source.uniformTypeIdentifier) else { continue }
 
                 let compressedData = try await Task.detached(priority: .utility) {
-                    try ImageCompressor.compressedJPEGData(
+                    try ImageCompressor.compressedData(
                         from: source.data,
                         maxPixelSize: maxPixelSize,
-                        jpegQuality: jpegQuality
+                        quality: quality,
+                        format: format
                     )
                 }.value
 
@@ -173,7 +191,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         messages.insert("Estimated \(estimates.count) photos with positive savings.", at: 0)
     }
 
-    func compressAndReplace(maxPixelSize: Int, jpegQuality: Double) async {
+    func compressAndReplace(maxPixelSize: Int, quality: Double, format: ExportFormat) async {
         guard canAccessPhotos else {
             messages.insert("Grant Photos access first.", at: 0)
             return
@@ -209,7 +227,8 @@ final class PhotoLibraryCompressor: ObservableObject {
                 let replacement = try await prepareReplacement(
                     for: asset,
                     maxPixelSize: maxPixelSize,
-                    jpegQuality: jpegQuality
+                    quality: quality,
+                    format: format
                 )
                 prepared.append(replacement)
                 preparedBytes += replacement.temporaryBytes
@@ -267,7 +286,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         return targets
     }
 
-    private func prepareReplacement(for asset: PHAsset, maxPixelSize: Int, jpegQuality: Double) async throws -> PreparedReplacement {
+    private func prepareReplacement(for asset: PHAsset, maxPixelSize: Int, quality: Double, format: ExportFormat) async throws -> PreparedReplacement {
         guard !shouldSkip(asset: asset) else {
             throw PhotoCompressionError.unsupportedAssetKind
         }
@@ -279,14 +298,15 @@ final class PhotoLibraryCompressor: ObservableObject {
 
         let temporaryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension("jpg")
+            .appendingPathExtension(format.fileExtension)
 
         let compressedBytes = try await Task.detached(priority: .utility) {
-            try ImageCompressor.writeCompressedJPEG(
+            try ImageCompressor.writeCompressedImage(
                 from: source.data,
                 to: temporaryURL,
                 maxPixelSize: maxPixelSize,
-                jpegQuality: jpegQuality
+                quality: quality,
+                format: format
             )
         }.value
 
@@ -448,9 +468,9 @@ enum PhotoCompressionError: LocalizedError {
         case .cannotCreateThumbnail:
             return "A resized image could not be created."
         case .cannotCreateDestination:
-            return "A compressed JPEG destination could not be created."
+            return "A compressed image destination could not be created."
         case .cannotFinalizeImage:
-            return "The compressed JPEG could not be finalized."
+            return "The compressed image could not be finalized."
         case .photoLibraryChangeFailed:
             return "Photos did not apply the requested change."
         case .unsupportedAssetKind:

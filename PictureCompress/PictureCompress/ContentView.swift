@@ -4,7 +4,8 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var library = PhotoLibraryCompressor()
     @State private var maxDimension = 1280.0
-    @State private var jpegQuality = 0.78
+    @State private var quality = 0.78
+    @State private var exportFormat: ExportFormat = .heic
 
     var body: some View {
         NavigationStack {
@@ -13,7 +14,19 @@ struct ContentView: View {
                     permissionRow
                 }
 
+                Section {
+                    savingsGauge
+                }
+
                 Section("Compression Settings") {
+                    Picker("Format", selection: $exportFormat) {
+                        ForEach(ExportFormat.allCases) { format in
+                            Text("\(format.displayName) - \(format.detail)")
+                                .tag(format)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
                     Stepper(value: $maxDimension, in: 640...4096, step: 160) {
                         HStack {
                             Text("Max side")
@@ -25,19 +38,19 @@ struct ContentView: View {
 
                     VStack(alignment: .leading) {
                         HStack {
-                            Text("JPEG quality")
+                            Text("\(exportFormat.displayName) quality")
                             Spacer()
-                            Text("\(Int(jpegQuality * 100))%")
+                            Text("\(Int(quality * 100))%")
                                 .foregroundStyle(.secondary)
                         }
-                        Slider(value: $jpegQuality, in: 0.35...0.95)
+                        Slider(value: $quality, in: 0.35...0.95)
                     }
                 }
 
                 Section {
                     Button {
                         Task {
-                            await library.scan(maxPixelSize: Int(maxDimension), jpegQuality: jpegQuality)
+                            await library.scan(maxPixelSize: Int(maxDimension), quality: quality, format: exportFormat)
                         }
                     } label: {
                         Label("Estimate Savings", systemImage: "magnifyingglass")
@@ -46,7 +59,7 @@ struct ContentView: View {
 
                     Button(role: .destructive) {
                         Task {
-                            await library.compressAndReplace(maxPixelSize: Int(maxDimension), jpegQuality: jpegQuality)
+                            await library.compressAndReplace(maxPixelSize: Int(maxDimension), quality: quality, format: exportFormat)
                         }
                     } label: {
                         Label("Compress and Replace Originals", systemImage: "arrow.triangle.2.circlepath.camera")
@@ -101,6 +114,35 @@ struct ContentView: View {
                 await library.refreshAuthorization()
             }
         }
+    }
+
+    private var savingsGauge: some View {
+        VStack(spacing: 12) {
+            Gauge(value: library.estimatedSavingsRatio, in: 0...1) {
+                Text("Savings")
+            } currentValueLabel: {
+                Text(library.estimatedSavingsPercent)
+                    .font(.headline)
+            } minimumValueLabel: {
+                Text("0")
+            } maximumValueLabel: {
+                Text("100%")
+            }
+            .gaugeStyle(.accessoryCircularCapacity)
+            .tint(.blue)
+            .frame(maxWidth: .infinity)
+
+            VStack(spacing: 3) {
+                Text(library.formatted(library.estimatedSavingsBytes))
+                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                    .contentTransition(.numericText())
+                Text(library.savingsGaugeCaption)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(.vertical, 6)
     }
 
     private var permissionRow: some View {

@@ -4,21 +4,21 @@ A simple SwiftUI iOS app that scans the user's Photos library, estimates how muc
 
 ![Photo Squeeze showing compression settings and estimated savings](PictureCompress/Screenshots/photo-squeeze-screenshot.png)
 
-The app lets you choose a maximum image side length and JPEG quality, estimate likely savings, then prepare compressed replacements for the originals. You can also skip the estimate and compress directly in one pass; the app only keeps replacement files that are smaller than the originals.
+The app lets you choose HEIC or JPEG output, a maximum image side length, and compression quality. As it scans, a savings meter shows how much storage could be recovered so far. You can also skip the estimate and compress directly in one pass; the app only keeps replacement files that are smaller than the originals.
 
 ## Important PhotoKit behavior
 
 iOS does not let third-party apps rewrite the original file for a Photos asset in place. The app uses the closest public-API workflow:
 
 1. Read the original image data.
-2. Resize and re-encode it directly to a temporary JPEG file while copying image metadata.
+2. Resize and re-encode it directly to a temporary HEIC or JPEG file while copying image metadata.
 3. Prepare a bounded batch of replacement files in the app's temporary directory.
 4. Ask Photos to create the new assets with the original creation dates and locations.
 5. Add the replacements back to user albums that can be modified.
 6. Delete the original assets in the same Photos change.
 7. Remove that batch's temporary files, then continue with the next batch.
 
-The replacement flow intentionally avoids preparing the whole library at once. It caps each batch at 100 photos or about 200 MB of temporary JPEGs, whichever comes first. That means iOS may show more than one delete confirmation for a very large library, but it should not ask once per photo and it avoids filling storage with a full-library temporary copy. After a successful replacement run, estimates are cleared instead of automatically recomputed so the app does not immediately recompress the library just to refresh the numbers.
+The replacement flow intentionally avoids preparing the whole library at once. It caps each batch at 100 photos or about 200 MB of temporary replacement files, whichever comes first. That means iOS may show more than one delete confirmation for a very large library, but it should not ask once per photo and it avoids filling storage with a full-library temporary copy. After a successful replacement run, estimates are cleared instead of automatically recomputed so the app does not immediately recompress the library just to refresh the numbers.
 
 This keeps normal Photos timeline sorting correct because the replacement receives the original `creationDate`. Smart albums, some system-only state, Live Photo motion data, RAW originals, and animated GIF behavior are not rewritten by this workflow, so the app skips Live Photos, RAW images, and GIFs.
 
