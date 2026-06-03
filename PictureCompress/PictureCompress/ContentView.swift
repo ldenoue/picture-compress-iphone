@@ -1,9 +1,24 @@
 import Photos
 import SwiftUI
 
+private struct MaxSideOption: Identifiable, Hashable {
+    let pixels: Int
+    let title: String
+    let detail: String
+
+    var id: Int { pixels }
+}
+
 struct ContentView: View {
+    private let maxSideOptions = [
+        MaxSideOption(pixels: 1280, title: "1280 px", detail: "Small"),
+        MaxSideOption(pixels: 2048, title: "2048 px", detail: "Balanced"),
+        MaxSideOption(pixels: 2560, title: "2560 px", detail: "Detailed"),
+        MaxSideOption(pixels: 3840, title: "3840 px", detail: "4K")
+    ]
+
     @StateObject private var library = PhotoLibraryCompressor()
-    @State private var maxDimension = 1280.0
+    @State private var maxSidePixels = 2048
     @State private var quality = 0.78
     @State private var exportFormat: ExportFormat = .heic
 
@@ -27,14 +42,13 @@ struct ContentView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    Stepper(value: $maxDimension, in: 640...4096, step: 160) {
-                        HStack {
-                            Text("Max side")
-                            Spacer()
-                            Text("\(Int(maxDimension)) px")
-                                .foregroundStyle(.secondary)
+                    Picker("Max side", selection: $maxSidePixels) {
+                        ForEach(maxSideOptions) { option in
+                            Text("\(option.title) - \(option.detail)")
+                                .tag(option.pixels)
                         }
                     }
+                    .pickerStyle(.menu)
 
                     VStack(alignment: .leading) {
                         HStack {
@@ -50,7 +64,7 @@ struct ContentView: View {
                 Section {
                     Button {
                         Task {
-                            await library.scan(maxPixelSize: Int(maxDimension), quality: quality, format: exportFormat)
+                            await library.scan(maxPixelSize: maxSidePixels, quality: quality, format: exportFormat)
                         }
                     } label: {
                         Label("Estimate Savings", systemImage: "magnifyingglass")
@@ -59,7 +73,7 @@ struct ContentView: View {
 
                     Button(role: .destructive) {
                         Task {
-                            await library.compressAndReplace(maxPixelSize: Int(maxDimension), quality: quality, format: exportFormat)
+                            await library.compressAndReplace(maxPixelSize: maxSidePixels, quality: quality, format: exportFormat)
                         }
                     } label: {
                         Label("Compress and Replace Originals", systemImage: "arrow.triangle.2.circlepath.camera")

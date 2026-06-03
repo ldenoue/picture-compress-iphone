@@ -4,7 +4,7 @@ A simple SwiftUI iOS app that scans the user's Photos library, estimates how muc
 
 ![Photo Squeeze showing compression settings and estimated savings](PictureCompress/Screenshots/photo-squeeze-screenshot.png)
 
-The app lets you choose HEIC or JPEG output, a maximum image side length, and compression quality. As it scans, a savings meter shows how much storage could be recovered so far. You can also skip the estimate and compress directly in one pass; the app only keeps replacement files that are smaller than the originals.
+The app lets you choose HEIC or JPEG output, a standard maximum image side length, and compression quality. It defaults to a balanced 2048 px max side. As it scans, a savings meter shows how much storage could be recovered so far. You can also skip the estimate and compress directly in one pass; the app only keeps replacement files that are smaller than the originals.
 
 ## Important PhotoKit behavior
 
