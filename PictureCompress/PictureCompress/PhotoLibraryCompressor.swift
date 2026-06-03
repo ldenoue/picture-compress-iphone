@@ -222,6 +222,7 @@ final class PhotoLibraryCompressor: ObservableObject {
     @Published private(set) var photosWithNoSavings = 0
     @Published private(set) var stopRequested = false
     @Published private(set) var throughputText = ""
+    @Published private(set) var didCompleteEstimate = false
 
     private let temporaryReplacementFolderName = "PhotoSqueezeReplacements"
     private let fallbackBatchTemporaryBytes = 200 * 1024 * 1024
@@ -311,6 +312,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         estimates.removeAll()
         photosChecked = 0
         photosWithNoSavings = 0
+        didCompleteEstimate = false
         progress = 0
         statusText = "Idle"
         throughputText = ""
@@ -342,8 +344,10 @@ final class PhotoLibraryCompressor: ObservableObject {
         estimates.removeAll()
         photosChecked = 0
         photosWithNoSavings = 0
+        didCompleteEstimate = false
         defer {
             let wasStopped = stopRequested
+            didCompleteEstimate = !wasStopped
             stopRequested = false
             isScanning = false
             progress = 1
@@ -503,6 +507,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         estimates.removeAll()
         photosChecked = 0
         photosWithNoSavings = 0
+        didCompleteEstimate = false
         messages.insert("Replaced \(replaced) photos in bounded batches. Skipped: \(skipped). Failed: \(failed).", at: 0)
         messages.insert("Run Estimate Savings again if you want refreshed numbers.", at: 1)
     }
@@ -529,7 +534,7 @@ final class PhotoLibraryCompressor: ObservableObject {
     }
 
     private func compressionTargets() -> [PHAsset] {
-        guard estimates.isEmpty else {
+        guard !didCompleteEstimate || estimates.isEmpty else {
             return estimates.map(\.asset)
         }
 

@@ -121,7 +121,7 @@ struct ContentView: View {
     }
 
     private var replaceConfirmationTitle: String {
-        guard library.estimatedSavingsBytes > 0 else {
+        guard library.didCompleteEstimate, library.estimatedSavingsBytes > 0 else {
             return "Replace originals with compressed versions?"
         }
 
@@ -129,7 +129,7 @@ struct ContentView: View {
     }
 
     private var replaceConfirmationButtonTitle: String {
-        guard library.estimatedSavingsBytes > 0 else {
+        guard library.didCompleteEstimate, library.estimatedSavingsBytes > 0 else {
             return "Replace Originals"
         }
 
