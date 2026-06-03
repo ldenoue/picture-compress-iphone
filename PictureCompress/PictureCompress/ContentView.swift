@@ -62,26 +62,6 @@ struct ContentView: View {
                     }
                 }
 
-                Section {
-                    Button {
-                        Task {
-                            await library.scan(maxPixelSize: maxSidePixels, quality: quality, format: exportFormat)
-                        }
-                    } label: {
-                        Label("Estimate Savings", systemImage: "magnifyingglass")
-                    }
-                    .disabled(!library.canAccessPhotos || library.isBusy)
-
-                    Button(role: .destructive) {
-                        isShowingReplaceConfirmation = true
-                    } label: {
-                        Label("Replace with Compressed Versions", systemImage: "arrow.triangle.2.circlepath.camera")
-                    }
-                    .disabled(!library.canAccessPhotos || library.isBusy)
-                } footer: {
-                    Text("Estimate first for a preview, or compress directly in one pass.")
-                }
-
                 if library.isBusy {
                     Section("Progress") {
                         ProgressView(value: library.progress)
@@ -158,6 +138,32 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
+
+            HStack(spacing: 12) {
+                Button {
+                    Task {
+                        await library.scan(maxPixelSize: maxSidePixels, quality: quality, format: exportFormat)
+                    }
+                } label: {
+                    Label("ESTIMATE", systemImage: "magnifyingglass")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .disabled(!library.canAccessPhotos || library.isBusy)
+
+                Button(role: .destructive) {
+                    isShowingReplaceConfirmation = true
+                } label: {
+                    Label("COMPRESS", systemImage: "arrow.triangle.2.circlepath.camera")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .tint(.red)
+                .disabled(!library.canAccessPhotos || library.isBusy)
+            }
+            .controlSize(.large)
         }
         .padding(.vertical, 6)
     }
