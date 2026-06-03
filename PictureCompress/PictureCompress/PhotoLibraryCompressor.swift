@@ -48,6 +48,8 @@ final class PhotoLibraryCompressor: ObservableObject {
     @Published private(set) var messages: [String] = []
     @Published private(set) var isScanning = false
     @Published private(set) var isCompressing = false
+    @Published private(set) var photosChecked = 0
+    @Published private(set) var photosWithoutSavings = 0
 
     private let imageManager = PHImageManager.default()
     private let fallbackBatchTemporaryBytes = 200 * 1024 * 1024
@@ -108,6 +110,10 @@ final class PhotoLibraryCompressor: ObservableObject {
             return "potential storage found so far"
         }
 
+        if photosChecked > 0 && estimates.isEmpty {
+            return "no smaller replacements found for these settings"
+        }
+
         guard !estimates.isEmpty else {
             return "run an estimate to fill the savings meter"
         }
@@ -123,6 +129,15 @@ final class PhotoLibraryCompressor: ObservableObject {
         authorizationStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
     }
 
+    func clearEstimateResults() {
+        guard !isBusy else { return }
+        estimates.removeAll()
+        photosChecked = 0
+        photosWithoutSavings = 0
+        progress = 0
+        statusText = "Idle"
+    }
+
     func scan(maxPixelSize: Int, quality: Double, format: ExportFormat) async {
         guard canAccessPhotos else {
             messages.insert("Grant Photos access first.", at: 0)
@@ -134,6 +149,8 @@ final class PhotoLibraryCompressor: ObservableObject {
         statusText = "Fetching photos..."
         messages.removeAll()
         estimates.removeAll()
+        photosChecked = 0
+        photosWithoutSavings = 0
         defer {
             isScanning = false
             progress = 1
@@ -159,6 +176,7 @@ final class PhotoLibraryCompressor: ObservableObject {
 
                 let source = try await requestImageData(for: asset)
                 guard !shouldSkip(uniformTypeIdentifier: source.uniformTypeIdentifier) else { continue }
+                photosChecked += 1
 
                 let compressedData = try await Task.detached(priority: .utility) {
                     try ImageCompressor.compressedData(
@@ -169,7 +187,10 @@ final class PhotoLibraryCompressor: ObservableObject {
                     )
                 }.value
 
-                guard compressedData.count < source.data.count else { continue }
+                guard compressedData.count < source.data.count else {
+                    photosWithoutSavings += 1
+                    continue
+                }
 
                 newEstimates.append(
                     PhotoEstimate(
@@ -192,7 +213,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         }
 
         estimates = newEstimates.sorted { $0.savedBytes > $1.savedBytes }
-        messages.insert("Estimated \(estimates.count) photos with positive savings.", at: 0)
+        messages.insert("Checked \(photosChecked) photos. \(estimates.count) had positive savings.", at: 0)
     }
 
     func compressAndReplace(maxPixelSize: Int, quality: Double, format: ExportFormat) async {
@@ -263,6 +284,8 @@ final class PhotoLibraryCompressor: ObservableObject {
         }
 
         estimates.removeAll()
+        photosChecked = 0
+        photosWithoutSavings = 0
         messages.insert("Replaced \(replaced) photos in bounded batches. Skipped: \(skipped). Failed: \(failed).", at: 0)
         messages.insert("Run Estimate Savings again if you want refreshed numbers.", at: 1)
     }

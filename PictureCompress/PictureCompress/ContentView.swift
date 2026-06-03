@@ -63,7 +63,9 @@ struct ContentView: View {
                 }
 
                 Section("Estimate") {
-                    metricRow("Photos scanned", value: "\(library.estimates.count)")
+                    metricRow("Photos checked", value: "\(library.photosChecked)")
+                    metricRow("Photos with savings", value: "\(library.estimates.count)")
+                    metricRow("Already optimized", value: "\(library.photosWithoutSavings)")
                     metricRow("Current size", value: library.formatted(library.totalOriginalBytes))
                     metricRow("Compressed size", value: library.formatted(library.totalCompressedBytes))
                     metricRow("Potential savings", value: library.formatted(library.estimatedSavingsBytes))
@@ -74,6 +76,15 @@ struct ContentView: View {
             .navigationTitle("Photo Squeeze")
             .task {
                 await library.refreshAuthorization()
+            }
+            .onChange(of: maxSidePixels) {
+                library.clearEstimateResults()
+            }
+            .onChange(of: quality) {
+                library.clearEstimateResults()
+            }
+            .onChange(of: exportFormat) {
+                library.clearEstimateResults()
             }
             .alert(replaceConfirmationTitle, isPresented: $isShowingReplaceConfirmation) {
                 Button(replaceConfirmationButtonTitle, role: .destructive) {
