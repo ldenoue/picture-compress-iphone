@@ -99,28 +99,6 @@ struct ContentView: View {
                     metricRow("Savings", value: library.estimatedSavingsPercent)
                 }
 
-                if !library.estimates.isEmpty {
-                    Section("Largest Savings") {
-                        ForEach(library.estimates.prefix(20)) { estimate in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(estimate.displayName)
-                                    .font(.headline)
-                                Text("\(library.formatted(estimate.originalBytes)) -> \(library.formatted(estimate.compressedBytes))")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-
-                if !library.messages.isEmpty {
-                    Section("Log") {
-                        ForEach(library.messages, id: \.self) { message in
-                            Text(message)
-                                .font(.footnote)
-                        }
-                    }
-                }
             }
             .navigationTitle("Photo Squeeze")
             .task {
