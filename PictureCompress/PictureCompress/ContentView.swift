@@ -62,15 +62,6 @@ struct ContentView: View {
                     }
                 }
 
-                if library.isBusy {
-                    Section("Progress") {
-                        ProgressView(value: library.progress)
-                        Text(library.statusText)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
                 Section("Estimate") {
                     metricRow("Photos scanned", value: "\(library.estimates.count)")
                     metricRow("Current size", value: library.formatted(library.totalOriginalBytes))
@@ -145,8 +136,12 @@ struct ContentView: View {
                         await library.scan(maxPixelSize: maxSidePixels, quality: quality, format: exportFormat)
                     }
                 } label: {
-                    Label("ESTIMATE", systemImage: "magnifyingglass")
+                    Text("ESTIMATE")
+                        .font(.callout.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .frame(maxWidth: .infinity)
+                        .frame(height: 34)
                 }
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.capsule)
@@ -155,8 +150,12 @@ struct ContentView: View {
                 Button(role: .destructive) {
                     isShowingReplaceConfirmation = true
                 } label: {
-                    Label("COMPRESS", systemImage: "arrow.triangle.2.circlepath.camera")
+                    Text("COMPRESS")
+                        .font(.callout.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .frame(maxWidth: .infinity)
+                        .frame(height: 34)
                 }
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.capsule)
@@ -164,6 +163,18 @@ struct ContentView: View {
                 .disabled(!library.canAccessPhotos || library.isBusy)
             }
             .controlSize(.large)
+
+            if library.isBusy {
+                VStack(spacing: 6) {
+                    ProgressView(value: library.progress)
+                    Text(library.statusText)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.top, 2)
+            }
         }
         .padding(.vertical, 6)
     }
