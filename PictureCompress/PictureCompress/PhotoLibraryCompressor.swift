@@ -50,8 +50,12 @@ final class PhotoLibraryCompressor: ObservableObject {
     @Published private(set) var isCompressing = false
 
     private let imageManager = PHImageManager.default()
-    private let maxBatchTemporaryBytes = 200 * 1024 * 1024
-    private let maxBatchItemCount = 100
+    private let fallbackBatchTemporaryBytes = 200 * 1024 * 1024
+    private let maxBatchTemporaryBytes = 4 * 1024 * 1024 * 1024
+    private let minimumBatchTemporaryBytes = 50 * 1024 * 1024
+    private let lowStorageBatchTemporaryBytes = 10 * 1024 * 1024
+    private let freeSpaceReserveBytes = 1 * 1024 * 1024 * 1024
+    private let maxBatchItemCount = 1000
 
     var canAccessPhotos: Bool {
         authorizationStatus == .authorized || authorizationStatus == .limited
@@ -210,6 +214,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         var replaced = 0
         var failed = 0
         var skipped = 0
+        var batchTemporaryByteLimit = dynamicBatchTemporaryByteLimit()
 
         guard !targets.isEmpty else {
             messages.insert("No image assets were available.", at: 0)
@@ -233,9 +238,10 @@ final class PhotoLibraryCompressor: ObservableObject {
                 prepared.append(replacement)
                 preparedBytes += replacement.temporaryBytes
 
-                if shouldCommitBatch(prepared, temporaryBytes: preparedBytes) {
+                if shouldCommitBatch(prepared, temporaryBytes: preparedBytes, byteLimit: batchTemporaryByteLimit) {
                     replaced += await commitPreparedBatch(&prepared, failed: &failed)
                     preparedBytes = 0
+                    batchTemporaryByteLimit = dynamicBatchTemporaryByteLimit()
                 }
             } catch PhotoCompressionError.noStorageSavings {
                 skipped += 1
@@ -323,8 +329,40 @@ final class PhotoLibraryCompressor: ObservableObject {
         )
     }
 
-    private func shouldCommitBatch(_ replacements: [PreparedReplacement], temporaryBytes: Int) -> Bool {
-        replacements.count >= maxBatchItemCount || temporaryBytes >= maxBatchTemporaryBytes
+    private func shouldCommitBatch(_ replacements: [PreparedReplacement], temporaryBytes: Int, byteLimit: Int) -> Bool {
+        replacements.count >= maxBatchItemCount || temporaryBytes >= byteLimit
+    }
+
+    private func dynamicBatchTemporaryByteLimit() -> Int {
+        let availableBytes = availableTemporaryVolumeBytes()
+        guard availableBytes > 0 else {
+            return fallbackBatchTemporaryBytes
+        }
+
+        let usableBytes = max(0, availableBytes - freeSpaceReserveBytes)
+        guard usableBytes > 0 else {
+            return max(lowStorageBatchTemporaryBytes, min(minimumBatchTemporaryBytes, availableBytes / 4))
+        }
+
+        let cautiousLimit = usableBytes / 2
+        return min(maxBatchTemporaryBytes, max(minimumBatchTemporaryBytes, cautiousLimit))
+    }
+
+    private func availableTemporaryVolumeBytes() -> Int {
+        let keys: Set<URLResourceKey> = [
+            .volumeAvailableCapacityForImportantUsageKey,
+            .volumeAvailableCapacityKey
+        ]
+
+        guard let values = try? FileManager.default.temporaryDirectory.resourceValues(forKeys: keys) else {
+            return 0
+        }
+
+        if let importantCapacity = values.volumeAvailableCapacityForImportantUsage {
+            return max(0, Int(min(importantCapacity, Int64(Int.max))))
+        }
+
+        return max(0, values.volumeAvailableCapacity ?? 0)
     }
 
     private func commitPreparedBatch(_ replacements: inout [PreparedReplacement], failed: inout Int) async -> Int {
@@ -357,7 +395,11 @@ final class PhotoLibraryCompressor: ObservableObject {
                 let creationRequest = PHAssetCreationRequest.forAsset()
                 creationRequest.creationDate = replacement.asset.creationDate
                 creationRequest.location = replacement.asset.location
-                creationRequest.addResource(with: .photo, fileURL: replacement.temporaryURL, options: nil)
+
+                let resourceOptions = PHAssetResourceCreationOptions()
+                resourceOptions.originalFilename = replacement.temporaryURL.lastPathComponent
+                resourceOptions.shouldMoveFile = true
+                creationRequest.addResource(with: .photo, fileURL: replacement.temporaryURL, options: resourceOptions)
 
                 if let placeholder = creationRequest.placeholderForCreatedAsset {
                     for album in replacement.albums {
