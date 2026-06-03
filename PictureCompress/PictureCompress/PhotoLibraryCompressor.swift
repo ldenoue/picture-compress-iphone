@@ -49,7 +49,7 @@ final class PhotoLibraryCompressor: ObservableObject {
     @Published private(set) var isScanning = false
     @Published private(set) var isCompressing = false
     @Published private(set) var photosChecked = 0
-    @Published private(set) var photosWithoutSavings = 0
+    @Published private(set) var photosWithNoSavings = 0
 
     private let imageManager = PHImageManager.default()
     private let fallbackBatchTemporaryBytes = 200 * 1024 * 1024
@@ -133,7 +133,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         guard !isBusy else { return }
         estimates.removeAll()
         photosChecked = 0
-        photosWithoutSavings = 0
+        photosWithNoSavings = 0
         progress = 0
         statusText = "Idle"
     }
@@ -150,7 +150,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         messages.removeAll()
         estimates.removeAll()
         photosChecked = 0
-        photosWithoutSavings = 0
+        photosWithNoSavings = 0
         defer {
             isScanning = false
             progress = 1
@@ -172,11 +172,18 @@ final class PhotoLibraryCompressor: ObservableObject {
             }
 
             do {
-                guard !shouldSkip(asset: asset) else { continue }
+                photosChecked += 1
+
+                guard !shouldSkip(asset: asset) else {
+                    photosWithNoSavings += 1
+                    continue
+                }
 
                 let source = try await requestImageData(for: asset)
-                guard !shouldSkip(uniformTypeIdentifier: source.uniformTypeIdentifier) else { continue }
-                photosChecked += 1
+                guard !shouldSkip(uniformTypeIdentifier: source.uniformTypeIdentifier) else {
+                    photosWithNoSavings += 1
+                    continue
+                }
 
                 let compressedData = try await Task.detached(priority: .utility) {
                     try ImageCompressor.compressedData(
@@ -188,7 +195,7 @@ final class PhotoLibraryCompressor: ObservableObject {
                 }.value
 
                 guard compressedData.count < source.data.count else {
-                    photosWithoutSavings += 1
+                    photosWithNoSavings += 1
                     continue
                 }
 
@@ -204,6 +211,7 @@ final class PhotoLibraryCompressor: ObservableObject {
                     )
                 )
             } catch {
+                photosWithNoSavings += 1
                 messages.append("Skipped a photo: \(error.localizedDescription)")
             }
 
@@ -285,7 +293,7 @@ final class PhotoLibraryCompressor: ObservableObject {
 
         estimates.removeAll()
         photosChecked = 0
-        photosWithoutSavings = 0
+        photosWithNoSavings = 0
         messages.insert("Replaced \(replaced) photos in bounded batches. Skipped: \(skipped). Failed: \(failed).", at: 0)
         messages.insert("Run Estimate Savings again if you want refreshed numbers.", at: 1)
     }

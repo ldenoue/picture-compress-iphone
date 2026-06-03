@@ -65,7 +65,7 @@ struct ContentView: View {
                 Section("Estimate") {
                     metricRow("Photos checked", value: "\(library.photosChecked)")
                     metricRow("Photos with savings", value: "\(library.estimates.count)")
-                    metricRow("Already optimized", value: "\(library.photosWithoutSavings)")
+                    metricRow("No savings", value: "\(library.photosWithNoSavings)")
                     metricRow("Current size", value: library.formatted(library.totalOriginalBytes))
                     metricRow("Compressed size", value: library.formatted(library.totalCompressedBytes))
                     metricRow("Potential savings", value: library.formatted(library.estimatedSavingsBytes))
