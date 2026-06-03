@@ -104,13 +104,15 @@ struct ContentView: View {
             .task {
                 await library.refreshAuthorization()
             }
-            .confirmationDialog(replaceConfirmationTitle, isPresented: $isShowingReplaceConfirmation, titleVisibility: .visible) {
+            .alert(replaceConfirmationTitle, isPresented: $isShowingReplaceConfirmation) {
                 Button(replaceConfirmationButtonTitle, role: .destructive) {
                     Task {
                         await library.compressAndReplace(maxPixelSize: maxSidePixels, quality: quality, format: exportFormat)
                     }
                 }
                 Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Photo Squeeze will create compressed replacements, then remove the originals after Photos asks for permission.")
             }
         }
     }
