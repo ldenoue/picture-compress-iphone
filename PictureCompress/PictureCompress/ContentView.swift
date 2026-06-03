@@ -10,6 +10,8 @@ private struct MaxSideOption: Identifiable, Hashable {
 }
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
+
     private let maxSideOptions = [
         MaxSideOption(pixels: 1280, title: "1280 px", detail: "Small"),
         MaxSideOption(pixels: 2048, title: "2048 px", detail: "Balanced"),
@@ -85,6 +87,11 @@ struct ContentView: View {
             }
             .onChange(of: exportFormat) {
                 library.clearEstimateResults()
+            }
+            .onChange(of: scenePhase) {
+                if scenePhase == .active {
+                    library.cleanupTemporaryStorageIfIdle()
+                }
             }
             .alert(replaceConfirmationTitle, isPresented: $isShowingReplaceConfirmation) {
                 Button(replaceConfirmationButtonTitle, role: .destructive) {
@@ -178,11 +185,23 @@ struct ContentView: View {
             if library.isBusy {
                 VStack(spacing: 6) {
                     ProgressView(value: library.progress)
-                    Text(library.statusText)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
+                    HStack(spacing: 10) {
+                        Text(library.statusText)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Button("STOP") {
+                            library.stopCurrentWork()
+                        }
+                        .font(.footnote.weight(.semibold))
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .tint(.red)
+                        .disabled(library.stopRequested)
+                    }
                 }
                 .padding(.top, 2)
             }

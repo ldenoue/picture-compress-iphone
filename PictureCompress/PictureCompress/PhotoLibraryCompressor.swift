@@ -50,8 +50,10 @@ final class PhotoLibraryCompressor: ObservableObject {
     @Published private(set) var isCompressing = false
     @Published private(set) var photosChecked = 0
     @Published private(set) var photosWithNoSavings = 0
+    @Published private(set) var stopRequested = false
 
     private let imageManager = PHImageManager.default()
+    private let temporaryReplacementFolderName = "PhotoSqueezeReplacements"
     private let fallbackBatchTemporaryBytes = 200 * 1024 * 1024
     private let maxBatchTemporaryBytes = 4 * 1024 * 1024 * 1024
     private let minimumBatchTemporaryBytes = 50 * 1024 * 1024
@@ -65,6 +67,10 @@ final class PhotoLibraryCompressor: ObservableObject {
 
     var isBusy: Bool {
         isScanning || isCompressing
+    }
+
+    private var temporaryReplacementDirectory: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(temporaryReplacementFolderName, isDirectory: true)
     }
 
     var authorizationSummary: String {
@@ -122,6 +128,7 @@ final class PhotoLibraryCompressor: ObservableObject {
     }
 
     func refreshAuthorization() async {
+        cleanupAllTemporaryReplacementFiles()
         authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     }
 
@@ -138,6 +145,17 @@ final class PhotoLibraryCompressor: ObservableObject {
         statusText = "Idle"
     }
 
+    func stopCurrentWork() {
+        guard isBusy else { return }
+        stopRequested = true
+        statusText = "Stopping..."
+    }
+
+    func cleanupTemporaryStorageIfIdle() {
+        guard !isBusy else { return }
+        cleanupAllTemporaryReplacementFiles()
+    }
+
     func scan(maxPixelSize: Int, quality: Double, format: ExportFormat) async {
         guard canAccessPhotos else {
             messages.insert("Grant Photos access first.", at: 0)
@@ -145,6 +163,7 @@ final class PhotoLibraryCompressor: ObservableObject {
         }
 
         isScanning = true
+        stopRequested = false
         progress = 0
         statusText = "Fetching photos..."
         messages.removeAll()
@@ -152,9 +171,11 @@ final class PhotoLibraryCompressor: ObservableObject {
         photosChecked = 0
         photosWithNoSavings = 0
         defer {
+            let wasStopped = stopRequested
+            stopRequested = false
             isScanning = false
             progress = 1
-            statusText = "Scan complete"
+            statusText = wasStopped ? "Estimate stopped" : "Scan complete"
         }
 
         let assets = fetchImageAssets()
@@ -165,6 +186,11 @@ final class PhotoLibraryCompressor: ObservableObject {
 
         var newEstimates: [PhotoEstimate] = []
         for index in 0..<assets.count {
+            if stopRequested {
+                statusText = "Estimate stopped"
+                break
+            }
+
             let asset = assets.object(at: index)
             if shouldUpdateProgress(index: index, total: assets.count) {
                 statusText = "Estimating \(index + 1) of \(assets.count)"
@@ -221,7 +247,11 @@ final class PhotoLibraryCompressor: ObservableObject {
         }
 
         estimates = newEstimates.sorted { $0.savedBytes > $1.savedBytes }
-        messages.insert("Checked \(photosChecked) photos. \(estimates.count) had positive savings.", at: 0)
+        if stopRequested {
+            messages.insert("Estimate stopped after checking \(photosChecked) photos.", at: 0)
+        } else {
+            messages.insert("Checked \(photosChecked) photos. \(estimates.count) had positive savings.", at: 0)
+        }
     }
 
     func compressAndReplace(maxPixelSize: Int, quality: Double, format: ExportFormat) async {
@@ -230,15 +260,22 @@ final class PhotoLibraryCompressor: ObservableObject {
             return
         }
         isCompressing = true
+        stopRequested = false
+        cleanupAllTemporaryReplacementFiles()
         progress = 0
+
+        var prepared: [PreparedReplacement] = []
         defer {
+            cleanupAllTemporaryReplacementFiles()
+            stopRequested = false
             isCompressing = false
             progress = 1
-            statusText = "Compression complete"
+            if statusText != "Compression stopped" {
+                statusText = "Compression complete"
+            }
         }
 
         let targets = compressionTargets()
-        var prepared: [PreparedReplacement] = []
         var preparedBytes = 0
         var replaced = 0
         var failed = 0
@@ -252,6 +289,11 @@ final class PhotoLibraryCompressor: ObservableObject {
 
         let targetDescription = estimates.isEmpty ? "photo" : "estimated photo"
         for (index, asset) in targets.enumerated() {
+            if stopRequested {
+                statusText = "Compression stopped"
+                break
+            }
+
             if shouldUpdateProgress(index: index, total: targets.count) {
                 statusText = "Preparing \(index + 1) of \(targets.count) \(targetDescription)s"
                 progress = Double(index) / Double(max(1, targets.count))
@@ -268,6 +310,10 @@ final class PhotoLibraryCompressor: ObservableObject {
                 preparedBytes += replacement.temporaryBytes
 
                 if shouldCommitBatch(prepared, temporaryBytes: preparedBytes, byteLimit: batchTemporaryByteLimit) {
+                    guard !stopRequested else {
+                        statusText = "Compression stopped"
+                        break
+                    }
                     replaced += await commitPreparedBatch(&prepared, failed: &failed)
                     preparedBytes = 0
                     batchTemporaryByteLimit = dynamicBatchTemporaryByteLimit()
@@ -282,8 +328,13 @@ final class PhotoLibraryCompressor: ObservableObject {
             }
         }
 
-        if !prepared.isEmpty {
+        if !stopRequested && !prepared.isEmpty {
             replaced += await commitPreparedBatch(&prepared, failed: &failed)
+        }
+
+        if stopRequested {
+            messages.insert("Compression stopped. Replaced \(replaced) photos before stopping.", at: 0)
+            return
         }
 
         guard replaced > 0 else {
@@ -334,18 +385,30 @@ final class PhotoLibraryCompressor: ObservableObject {
         }
 
         let temporaryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(temporaryReplacementFolderName, isDirectory: true)
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(format.fileExtension)
 
-        let compressedBytes = try await Task.detached(priority: .utility) {
-            try ImageCompressor.writeCompressedImage(
-                from: source.data,
-                to: temporaryURL,
-                maxPixelSize: maxPixelSize,
-                quality: quality,
-                format: format
-            )
-        }.value
+        try FileManager.default.createDirectory(
+            at: temporaryReplacementDirectory,
+            withIntermediateDirectories: true
+        )
+
+        let compressedBytes: Int
+        do {
+            compressedBytes = try await Task.detached(priority: .utility) {
+                try ImageCompressor.writeCompressedImage(
+                    from: source.data,
+                    to: temporaryURL,
+                    maxPixelSize: maxPixelSize,
+                    quality: quality,
+                    format: format
+                )
+            }.value
+        } catch {
+            try? FileManager.default.removeItem(at: temporaryURL)
+            throw error
+        }
 
         guard compressedBytes < source.data.count else {
             try? FileManager.default.removeItem(at: temporaryURL)
@@ -418,6 +481,10 @@ final class PhotoLibraryCompressor: ObservableObject {
         for replacement in replacements {
             try? FileManager.default.removeItem(at: replacement.temporaryURL)
         }
+    }
+
+    private func cleanupAllTemporaryReplacementFiles() {
+        try? FileManager.default.removeItem(at: temporaryReplacementDirectory)
     }
 
     private func commitReplacements(_ replacements: [PreparedReplacement]) async throws {

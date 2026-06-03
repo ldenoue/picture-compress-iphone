@@ -18,7 +18,7 @@ Photo Squeeze uses a bounded replacement workflow:
 6. Delete the original assets in the same Photos change.
 7. Remove that batch's temporary files, then continue with the next batch.
 
-The replacement flow intentionally avoids preparing the whole library at once. It sizes each batch from available temporary storage, keeps a free-space reserve, and caps batches at 1000 photos or 4 GB of temporary replacement files. On devices with enough room, this greatly reduces how often Photos asks for delete confirmation. After a successful replacement run, estimates are cleared instead of automatically recomputed so the app does not immediately recompress the library just to refresh the numbers.
+The replacement flow intentionally avoids preparing the whole library at once. It sizes each batch from available temporary storage, keeps a free-space reserve, and caps batches at 1000 photos or 4 GB of temporary replacement files. On devices with enough room, this greatly reduces how often Photos asks for delete confirmation. Replacement files are kept in an app-owned temporary folder that is cleaned on launch, stop, idle resume, and after replacement runs. After a successful replacement run, estimates are cleared instead of automatically recomputed so the app does not immediately recompress the library just to refresh the numbers.
 
 This keeps normal Photos timeline sorting correct because the replacement receives the original `creationDate`. Smart albums, some system-only state, Live Photo motion data, RAW originals, and animated GIF behavior are not rewritten by this workflow, so the app skips Live Photos, RAW images, and GIFs.
 
