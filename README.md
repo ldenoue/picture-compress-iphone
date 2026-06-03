@@ -6,9 +6,9 @@ A simple SwiftUI iOS app that scans the user's Photos library, estimates how muc
 
 The app lets you choose HEIC or JPEG output, a standard maximum image side length, and compression quality. It defaults to a balanced 2048 px max side. As it scans, a savings meter shows how much storage could be recovered so far. You can also skip the estimate and compress directly in one pass; the app only keeps replacement files that are smaller than the originals.
 
-## Important PhotoKit behavior
+## Replacement workflow
 
-iOS does not let third-party apps rewrite the original file for a Photos asset in place. The app uses the closest public-API workflow:
+Photo Squeeze uses a bounded replacement workflow:
 
 1. Read the original image data.
 2. Resize and re-encode it directly to a temporary HEIC or JPEG file while copying image metadata.

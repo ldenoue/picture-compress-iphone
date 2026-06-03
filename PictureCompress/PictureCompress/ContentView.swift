@@ -21,6 +21,7 @@ struct ContentView: View {
     @State private var maxSidePixels = 2048
     @State private var quality = 0.78
     @State private var exportFormat: ExportFormat = .heic
+    @State private var isShowingReplaceConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -72,15 +73,13 @@ struct ContentView: View {
                     .disabled(!library.canAccessPhotos || library.isBusy)
 
                     Button(role: .destructive) {
-                        Task {
-                            await library.compressAndReplace(maxPixelSize: maxSidePixels, quality: quality, format: exportFormat)
-                        }
+                        isShowingReplaceConfirmation = true
                     } label: {
-                        Label("Compress and Replace Originals", systemImage: "arrow.triangle.2.circlepath.camera")
+                        Label("Replace with Compressed Versions", systemImage: "arrow.triangle.2.circlepath.camera")
                     }
                     .disabled(!library.canAccessPhotos || library.isBusy)
                 } footer: {
-                    Text("You can estimate first, or compress directly in one pass. iOS does not allow apps to rewrite a Photos original in place, so this prepares bounded batches of compressed replacements, then asks Photos to save each batch and delete its originals.")
+                    Text("Estimate first for a preview, or compress directly in one pass.")
                 }
 
                 if library.isBusy {
@@ -127,7 +126,31 @@ struct ContentView: View {
             .task {
                 await library.refreshAuthorization()
             }
+            .confirmationDialog(replaceConfirmationTitle, isPresented: $isShowingReplaceConfirmation, titleVisibility: .visible) {
+                Button(replaceConfirmationButtonTitle, role: .destructive) {
+                    Task {
+                        await library.compressAndReplace(maxPixelSize: maxSidePixels, quality: quality, format: exportFormat)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
         }
+    }
+
+    private var replaceConfirmationTitle: String {
+        guard library.estimatedSavingsBytes > 0 else {
+            return "Replace originals with compressed versions?"
+        }
+
+        return "Replace originals with compressed versions and save \(library.formatted(library.estimatedSavingsBytes))?"
+    }
+
+    private var replaceConfirmationButtonTitle: String {
+        guard library.estimatedSavingsBytes > 0 else {
+            return "Replace Originals"
+        }
+
+        return "Save \(library.formatted(library.estimatedSavingsBytes))"
     }
 
     private var savingsGauge: some View {
